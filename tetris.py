@@ -1,68 +1,49 @@
-import pygame
-import random
+import pygame, random
 
 pygame.init()
+pygame.key.set_repeat(170, 50)
 
-COLS, ROWS = 10, 20
-CELL = 30
-WIDTH = COLS * CELL + 160
-HEIGHT = ROWS * CELL
-
-BLACK  = (0, 0, 0)
-WHITE  = (255, 255, 255)
-GRAY   = (40, 40, 40)
-BORDER = (80, 80, 80)
-
-SHAPES = [
-    [[1,1,1,1]],
-    [[1,1],[1,1]],
-    [[0,1,0],[1,1,1]],
-    [[1,0,0],[1,1,1]],
-    [[0,0,1],[1,1,1]],
-    [[1,1,0],[0,1,1]],
-    [[0,1,1],[1,1,0]],
-]
-
-COLORS = [
-    (0,   240, 240),
-    (240, 240,   0),
-    (160,   0, 240),
-    (0,    0,  240),
-    (240, 160,   0),
-    (240,   0,   0),
-    (0,   240,   0),
-]
-
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+COLS, ROWS, CELL = 10, 20, 30
+SIDE = 150
+screen = pygame.display.set_mode((COLS * CELL + SIDE, ROWS * CELL))
 pygame.display.set_caption("Tetris")
 clock = pygame.time.Clock()
-font_big  = pygame.font.SysFont("monospace", 28, bold=True)
-font_small = pygame.font.SysFont("monospace", 18)
+font = pygame.font.SysFont("monospace", 20, bold=True)
+
+PIECES = [
+    ([[1,1,1,1]],         (0, 240, 240)),
+    ([[1,1],[1,1]],       (240, 240, 0)),
+    ([[0,1,0],[1,1,1]],   (160, 0, 240)),
+    ([[1,0,0],[1,1,1]],   (0, 0, 240)),
+    ([[0,0,1],[1,1,1]],   (240, 160, 0)),
+    ([[1,1,0],[0,1,1]],   (240, 0, 0)),
+    ([[0,1,1],[1,1,0]],   (0, 240, 0)),
+]
 
 def new_piece():
-    idx = random.randrange(len(SHAPES))
-    return {"shape": SHAPES[idx], "color": COLORS[idx],
-            "x": COLS // 2 - len(SHAPES[idx][0]) // 2, "y": 0}
+    shape, color = random.choice(PIECES)
+    return {"shape": shape, "color": color, "x": COLS // 2 - len(shape[0]) // 2, "y": 0}
+
+def spawn(shape, color):
+    return {"shape": shape, "color": color, "x": COLS // 2 - len(shape[0]) // 2, "y": 0}
 
 def rotate(shape):
     return [list(row) for row in zip(*shape[::-1])]
 
-def valid(board, piece, ox=0, oy=0, shape=None):
-    s = shape if shape else piece["shape"]
+def fits(board, piece, ox=0, oy=0, shape=None):
+    s = shape or piece["shape"]
     for r, row in enumerate(s):
-        for c, cell in enumerate(row):
-            if cell:
-                nx, ny = piece["x"] + c + ox, piece["y"] + r + oy
-                if nx < 0 or nx >= COLS or ny >= ROWS:
-                    return False
-                if ny >= 0 and board[ny][nx]:
+        for c, val in enumerate(row):
+            if val:
+                x, y = piece["x"] + c + ox, piece["y"] + r + oy
+                if x < 0 or x >= COLS or y >= ROWS or (y >= 0 and board[y][x]):
                     return False
     return True
 
 def lock(board, piece):
     for r, row in enumerate(piece["shape"]):
-        for c, cell in enumerate(row):
-            if cell:
+        for c, val in enumerate(row):
+            if val:
                 board[piece["y"] + r][piece["x"] + c] = piece["color"]
 
 def clear_lines(board):
@@ -72,223 +53,148 @@ def clear_lines(board):
         board.insert(0, [None] * COLS)
     return len(full)
 
-def draw_cell(surface, x, y, color):
-    rect = pygame.Rect(x * CELL, y * CELL, CELL - 1, CELL - 1)
-    pygame.draw.rect(surface, color, rect)
-    highlight = tuple(min(255, v + 60) for v in color)
-    pygame.draw.rect(surface, highlight, rect, 2)
+def draw_piece_at(surface, shape, color, px, py):
+    for r, row in enumerate(shape):
+        for c, val in enumerate(row):
+            if val:
+                pygame.draw.rect(surface, color, ((px + c) * CELL, (py + r) * CELL, CELL - 1, CELL - 1))
 
-def draw_board(surface, board):
+def draw_mini(surface, shape, color, x, y):
+    for r, row in enumerate(shape):
+        for c, val in enumerate(row):
+            if val:
+                pygame.draw.rect(surface, color, (x + c * CELL, y + r * CELL, CELL - 1, CELL - 1))
+
+def draw(board, piece, next_p, held_p, score, level, lines, paused):
+    screen.fill((0, 0, 0))
+
     for r in range(ROWS):
         for c in range(COLS):
-            if board[r][c]:
-                draw_cell(surface, c, r, board[r][c])
-            else:
-                pygame.draw.rect(surface, GRAY,
-                    pygame.Rect(c * CELL, r * CELL, CELL - 1, CELL - 1))
+            color = board[r][c] or (40, 40, 40)
+            pygame.draw.rect(screen, color, (c * CELL, r * CELL, CELL - 1, CELL - 1))
 
-def draw_piece(surface, piece):
-    for r, row in enumerate(piece["shape"]):
-        for c, cell in enumerate(row):
-            if cell:
-                draw_cell(surface, piece["x"] + c, piece["y"] + r, piece["color"])
-
-def draw_ghost(surface, board, piece):
     ghost = dict(piece)
-    while valid(board, ghost, oy=1):
+    while fits(board, ghost, oy=1):
         ghost = {**ghost, "y": ghost["y"] + 1}
     for r, row in enumerate(ghost["shape"]):
-        for c, cell in enumerate(row):
-            if cell:
-                rect = pygame.Rect((ghost["x"] + c) * CELL, (ghost["y"] + r) * CELL,
-                                   CELL - 1, CELL - 1)
-                pygame.draw.rect(surface, (60, 60, 60), rect)
-                pygame.draw.rect(surface, BORDER, rect, 1)
+        for c, val in enumerate(row):
+            if val:
+                pygame.draw.rect(screen, (60, 60, 60), ((ghost["x"] + c) * CELL, (ghost["y"] + r) * CELL, CELL - 1, CELL - 1))
 
-def draw_next(surface, piece):
-    label = font_small.render("NEXT", True, WHITE)
-    surface.blit(label, (COLS * CELL + 20, 20))
-    for r, row in enumerate(piece["shape"]):
-        for c, cell in enumerate(row):
-            if cell:
-                rx = COLS * CELL + 20 + c * CELL
-                ry = 50 + r * CELL
-                pygame.draw.rect(surface, piece["color"],
-                    pygame.Rect(rx, ry, CELL - 1, CELL - 1))
+    draw_piece_at(screen, piece["shape"], piece["color"], piece["x"], piece["y"])
 
-def draw_held(surface, piece):
-    label = font_small.render("HOLD", True, WHITE)
-    surface.blit(label, (COLS * CELL + 20, 140))
-    if piece is None:
-        return
-    for r, row in enumerate(piece["shape"]):
-        for c, cell in enumerate(row):
-            if cell:
-                rx = COLS * CELL + 20 + c * CELL
-                ry = 170 + r * CELL
-                pygame.draw.rect(surface, piece["color"],
-                    pygame.Rect(rx, ry, CELL - 1, CELL - 1))
+    sx = COLS * CELL + 10
+    pygame.draw.line(screen, (80, 80, 80), (COLS * CELL, 0), (COLS * CELL, ROWS * CELL), 2)
+    screen.blit(font.render("NEXT", True, (255, 255, 255)), (sx, 10))
+    draw_mini(screen, next_p["shape"], next_p["color"], sx, 35)
+    screen.blit(font.render("HOLD", True, (255, 255, 255)), (sx, 130))
+    if held_p:
+        draw_mini(screen, held_p["shape"], held_p["color"], sx, 155)
+    screen.blit(font.render(f"Score", True, (180, 180, 180)), (sx, 260))
+    screen.blit(font.render(str(score), True, (255, 255, 255)), (sx, 282))
+    screen.blit(font.render(f"Level", True, (180, 180, 180)), (sx, 320))
+    screen.blit(font.render(str(level), True, (255, 255, 255)), (sx, 342))
+    screen.blit(font.render(f"Lines", True, (180, 180, 180)), (sx, 380))
+    screen.blit(font.render(str(lines), True, (255, 255, 255)), (sx, 402))
 
-def draw_sidebar(surface, score, level, lines):
-    x = COLS * CELL + 10
-    surface.blit(font_small.render(f"SCORE", True, WHITE), (x, 280))
-    surface.blit(font_big.render(str(score), True, WHITE), (x, 305))
-    surface.blit(font_small.render(f"LEVEL", True, WHITE), (x, 360))
-    surface.blit(font_big.render(str(level), True, WHITE), (x, 385))
-    surface.blit(font_small.render(f"LINES", True, WHITE), (x, 440))
-    surface.blit(font_big.render(str(lines), True, WHITE), (x, 465))
+    if paused:
+        screen.blit(font.render("PAUSED", True, (255, 255, 255)), (COLS * CELL // 2 - 40, ROWS * CELL // 2))
 
-LINE_SCORES = [0, 100, 300, 500, 800]
+    pygame.display.flip()
+
+SCORES = [0, 100, 300, 500, 800]
 
 def fall_speed(level):
     return max(50, 500 - (level - 1) * 45)
 
-def game_over_screen(score):
-    screen.fill(BLACK)
-    screen.blit(font_big.render("GAME OVER", True, (240, 0, 0)),  (WIDTH // 2 - 90, HEIGHT // 2 - 50))
-    screen.blit(font_small.render(f"Score: {score}", True, WHITE), (WIDTH // 2 - 50, HEIGHT // 2))
-    screen.blit(font_small.render("R to restart  Q to quit", True, BORDER), (WIDTH // 2 - 110, HEIGHT // 2 + 40))
+def game_over(score):
+    screen.fill((0, 0, 0))
+    screen.blit(font.render("GAME OVER", True, (240, 0, 0)), (80, ROWS * CELL // 2 - 30))
+    screen.blit(font.render(f"Score: {score}", True, (255, 255, 255)), (90, ROWS * CELL // 2))
+    screen.blit(font.render("R=restart  Q=quit", True, (100, 100, 100)), (50, ROWS * CELL // 2 + 30))
     pygame.display.flip()
     while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT or (e.type == pygame.KEYDOWN and e.key == pygame.K_q):
                 return False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    return True
-                if event.key == pygame.K_q:
-                    return False
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_r:
+                return True
 
 def main():
     while True:
         board = [[None] * COLS for _ in range(ROWS)]
         piece = new_piece()
-        next_piece = new_piece()
-        score = 0
-        level = 1
-        total_lines = 0
-        fall_timer = 0
-        das_timer = 0
-        das_delay = 170
-        das_repeat = 50
-        move_dir = 0
-        move_held = False
-        paused = False
-        held_piece = None
+        next_p = new_piece()
+        held_p = None
         can_hold = True
-        running = True
+        score, level, total_lines = 0, 1, 0
+        fall_timer = 0
+        paused = False
 
-        while running:
+        while True:
             dt = clock.tick(60)
             if not paused:
                 fall_timer += dt
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.quit(); return
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_ESCAPE:
                         paused = not paused
+                        continue
                     if paused:
                         continue
-                    if event.key == pygame.K_c:
-                        if can_hold:
-                            can_hold = False
-                            idx = COLORS.index(piece["color"])
-                            saved = {"shape": SHAPES[idx], "color": COLORS[idx],
-                                     "x": COLS // 2 - len(SHAPES[idx][0]) // 2, "y": 0}
-                            if held_piece is None:
-                                held_piece = saved
-                                piece = next_piece
-                                next_piece = new_piece()
-                            else:
-                                prev = held_piece
-                                held_piece = saved
-                                piece = {**prev,
-                                         "x": COLS // 2 - len(prev["shape"][0]) // 2, "y": 0}
-                            fall_timer = 0
-                    if event.key == pygame.K_UP:
+                    if e.key == pygame.K_UP:
                         rot = rotate(piece["shape"])
-                        if valid(board, piece, shape=rot):
-                            piece["shape"] = rot
-                        elif valid(board, piece, ox=1, shape=rot):
-                            piece["x"] += 1; piece["shape"] = rot
-                        elif valid(board, piece, ox=-1, shape=rot):
-                            piece["x"] -= 1; piece["shape"] = rot
-                    if event.key == pygame.K_SPACE:
-                        while valid(board, piece, oy=1):
+                        for ox in (0, 1, -1):
+                            if fits(board, piece, ox=ox, shape=rot):
+                                piece["x"] += ox; piece["shape"] = rot; break
+                    if e.key == pygame.K_LEFT and fits(board, piece, ox=-1):
+                        piece["x"] -= 1
+                    if e.key == pygame.K_RIGHT and fits(board, piece, ox=1):
+                        piece["x"] += 1
+                    if e.key == pygame.K_DOWN and fits(board, piece, oy=1):
+                        piece["y"] += 1
+                    if e.key == pygame.K_SPACE:
+                        while fits(board, piece, oy=1):
                             piece["y"] += 1
                         lock(board, piece)
-                        cleared = clear_lines(board)
-                        total_lines += cleared
-                        score += LINE_SCORES[cleared] * level
+                        n = clear_lines(board)
+                        total_lines += n; score += SCORES[n] * level
                         level = total_lines // 10 + 1
-                        piece = next_piece
-                        next_piece = new_piece()
+                        piece = next_p; next_p = new_piece(); can_hold = True
                         fall_timer = 0
-                        can_hold = True
-                        if not valid(board, piece):
-                            running = False
-                    if event.key == pygame.K_DOWN:
-                        move_dir = 0
-                    if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
-                        move_dir = -1 if event.key == pygame.K_LEFT else 1
-                        move_held = False
-                        das_timer = 0
-                        if valid(board, piece, ox=move_dir):
-                            piece["x"] += move_dir
-                if event.type == pygame.KEYUP:
-                    if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
-                        move_dir = 0
+                        if not fits(board, piece):
+                            break
+                    if e.key == pygame.K_c and can_hold:
+                        can_hold = False
+                        s, col = piece["shape"], piece["color"]
+                        if held_p is None:
+                            held_p = spawn(s, col)
+                            piece = next_p; next_p = new_piece()
+                        else:
+                            held_p, piece = spawn(s, col), spawn(held_p["shape"], held_p["color"])
+                        fall_timer = 0
+            else:
+                if not paused and fall_timer >= fall_speed(level):
+                    fall_timer = 0
+                    if fits(board, piece, oy=1):
+                        piece["y"] += 1
+                    else:
+                        lock(board, piece)
+                        n = clear_lines(board)
+                        total_lines += n; score += SCORES[n] * level
+                        level = total_lines // 10 + 1
+                        piece = next_p; next_p = new_piece(); can_hold = True
+                        if not fits(board, piece):
+                            break
 
-            if paused:
-                label = font_big.render("PAUSED", True, WHITE)
-                screen.blit(label, (COLS * CELL // 2 - label.get_width() // 2, HEIGHT // 2 - 20))
-                pygame.display.flip()
+                draw(board, piece, next_p, held_p, score, level, total_lines, paused)
                 continue
+            break
 
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_DOWN]:
-                fall_timer += dt * 9
-
-            if move_dir:
-                das_timer += dt
-                threshold = das_repeat if move_held else das_delay
-                if das_timer >= threshold:
-                    das_timer = 0
-                    move_held = True
-                    if valid(board, piece, ox=move_dir):
-                        piece["x"] += move_dir
-
-            if fall_timer >= fall_speed(level):
-                fall_timer = 0
-                if valid(board, piece, oy=1):
-                    piece["y"] += 1
-                else:
-                    lock(board, piece)
-                    cleared = clear_lines(board)
-                    total_lines += cleared
-                    score += LINE_SCORES[cleared] * level
-                    level = total_lines // 10 + 1
-                    piece = next_piece
-                    next_piece = new_piece()
-                    can_hold = True
-                    if not valid(board, piece):
-                        running = False
-
-            screen.fill(BLACK)
-            draw_board(screen, board)
-            draw_ghost(screen, board, piece)
-            draw_piece(screen, piece)
-            pygame.draw.line(screen, BORDER, (COLS * CELL, 0), (COLS * CELL, HEIGHT), 2)
-            draw_next(screen, next_piece)
-            draw_held(screen, held_piece)
-            draw_sidebar(screen, score, level, total_lines)
-            pygame.display.flip()
-
-        if not game_over_screen(score):
-            pygame.quit()
-            return
+        if not game_over(score):
+            pygame.quit(); return
 
 main()
