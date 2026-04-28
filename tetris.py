@@ -4,8 +4,7 @@ pygame.init()
 pygame.key.set_repeat(170, 50)
 
 COLS, ROWS, CELL = 10, 20, 30
-SIDE = 150
-screen = pygame.display.set_mode((COLS * CELL + SIDE, ROWS * CELL))
+screen = pygame.display.set_mode((COLS * CELL + 150, ROWS * CELL))
 pygame.display.set_caption("Tetris")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont("monospace", 20, bold=True)
@@ -53,12 +52,6 @@ def clear_lines(board):
         board.insert(0, [None] * COLS)
     return len(full)
 
-def draw_piece_at(surface, shape, color, px, py):
-    for r, row in enumerate(shape):
-        for c, val in enumerate(row):
-            if val:
-                pygame.draw.rect(surface, color, ((px + c) * CELL, (py + r) * CELL, CELL - 1, CELL - 1))
-
 def draw_mini(surface, shape, color, x, y):
     for r, row in enumerate(shape):
         for c, val in enumerate(row):
@@ -81,7 +74,7 @@ def draw(board, piece, next_p, held_p, score, level, lines, paused):
             if val:
                 pygame.draw.rect(screen, (60, 60, 60), ((ghost["x"] + c) * CELL, (ghost["y"] + r) * CELL, CELL - 1, CELL - 1))
 
-    draw_piece_at(screen, piece["shape"], piece["color"], piece["x"], piece["y"])
+    draw_mini(screen, piece["shape"], piece["color"], piece["x"] * CELL, piece["y"] * CELL)
 
     sx = COLS * CELL + 10
     pygame.draw.line(screen, (80, 80, 80), (COLS * CELL, 0), (COLS * CELL, ROWS * CELL), 2)
