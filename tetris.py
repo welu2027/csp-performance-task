@@ -3,6 +3,7 @@ import pygame, random
 pygame.init()
 pygame.key.set_repeat(170, 50)
 
+# window and display settings
 COLS, ROWS, CELL = 10, 20, 30
 screen = pygame.display.set_mode((COLS * CELL + 150, ROWS * CELL))
 pygame.display.set_caption("Tetris")
@@ -10,6 +11,7 @@ clock = pygame.time.Clock()
 font = pygame.font.SysFont("monospace", 18, bold=True)
 small = pygame.font.SysFont("monospace", 13)
 
+# all 7 tetromino shapes stored as 2d lists paired with their rgb color
 PIECES = [
     ([[1,1,1,1]],       (0, 240, 240)),
     ([[1,1],[1,1]],     (240, 240, 0)),
@@ -19,15 +21,21 @@ PIECES = [
     ([[1,1,0],[0,1,1]], (240, 0, 0)),
     ([[0,1,1],[1,1,0]], (0, 240, 0)),
 ]
+
+# points awarded for clearing 1, 2, 3, or 4 lines at once
 SCORES = [0, 100, 300, 500, 800]
 
+# picks a random piece and spawns it at the top center of the board
 def new_piece():
     shape, color = random.choice(PIECES)
     return {"shape": shape, "color": color, "x": COLS // 2 - len(shape[0]) // 2, "y": 0}
 
+# rotates a shape 90 degrees clockwise by transposing and reversing rows
 def rotate(shape):
     return [list(row) for row in zip(*shape[::-1])]
 
+# checks if a piece fits on the board at its current position plus any offset
+# iterates over each cell in the shape and returns false if out of bounds or overlapping
 def fits(board, piece, ox=0, oy=0, shape=None):
     for r, row in enumerate(shape or piece["shape"]):
         for c, val in enumerate(row):
@@ -37,12 +45,15 @@ def fits(board, piece, ox=0, oy=0, shape=None):
                     return False
     return True
 
+# writes a piece's color into the board grid so it becomes part of the stack
 def lock(board, piece):
     for r, row in enumerate(piece["shape"]):
         for c, val in enumerate(row):
             if val:
                 board[piece["y"] + r][piece["x"] + c] = piece["color"]
 
+# finds fully filled rows, removes them, and adds empty rows at the top
+# returns how many lines were cleared
 def clear_lines(board):
     full = [r for r in range(ROWS) if all(board[r])]
     for r in full:
@@ -50,18 +61,21 @@ def clear_lines(board):
         board.insert(0, [None] * COLS)
     return len(full)
 
+# draws a piece shape as colored squares at a given pixel position
 def draw_mini(surface, shape, color, x, y):
     for r, row in enumerate(shape):
         for c, val in enumerate(row):
             if val:
                 pygame.draw.rect(surface, color, (x + c * CELL, y + r * CELL, CELL - 1, CELL - 1))
 
+# draws a single keyboard key that highlights yellow when held
 def draw_key(label, x, y, held):
     color = (255, 255, 100) if held else (70, 70, 70)
     pygame.draw.rect(screen, color, (x, y, 30, 24), border_radius=4)
     pygame.draw.rect(screen, (150, 150, 150), (x, y, 30, 24), 1, border_radius=4)
     screen.blit(small.render(label, True, (0, 0, 0) if held else (180, 180, 180)), (x + 4, y + 5))
 
+# draws the arrow key layout and spacebar, lighting up whichever keys are currently pressed
 def draw_keys(keys_held):
     bx, by = COLS * CELL + 15, 490
     draw_key(" ^", bx + 34, by, keys_held["up"])
@@ -72,6 +86,7 @@ def draw_keys(keys_held):
     pygame.draw.rect(screen, (150, 150, 150), (bx, by + 62, 102, 20), 1, border_radius=4)
     screen.blit(small.render("SPACE=drop", True, (0,0,0) if keys_held["space"] else (180,180,180)), (bx + 6, by + 65))
 
+# renders the full game frame: board grid, active piece, sidebar info, and key display
 def draw(board, piece, next_p, score, keys_held):
     screen.fill((0, 0, 0))
     for r in range(ROWS):
@@ -87,6 +102,7 @@ def draw(board, piece, next_p, score, keys_held):
     draw_keys(keys_held)
     pygame.display.flip()
 
+# shows the game over screen and waits for the player to restart or quit
 def game_over(score):
     screen.fill((0, 0, 0))
     screen.blit(font.render("GAME OVER", True, (240, 0, 0)), (70, ROWS * CELL // 2 - 20))
@@ -102,6 +118,7 @@ def game_over(score):
 
 def main():
     while True:
+        # reset all game state at the start of each round
         board = [[None] * COLS for _ in range(ROWS)]
         piece, next_p = new_piece(), new_piece()
         score, level, total_lines, fall_timer = 0, 1, 0, 0
@@ -109,10 +126,13 @@ def main():
 
         while True:
             fall_timer += clock.tick(60)
+
+            # track which keys are currently held down for the key visualizer
             k = pygame.key.get_pressed()
             keys_held = {"up": k[pygame.K_UP], "left": k[pygame.K_LEFT],
                          "right": k[pygame.K_RIGHT], "down": k[pygame.K_DOWN], "space": k[pygame.K_SPACE]}
 
+            # handle input events: movement, rotation, and hard drop
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
                     pygame.quit(); return
@@ -126,6 +146,7 @@ def main():
                     if e.key == pygame.K_RIGHT and fits(board, piece, ox=1):  piece["x"] += 1
                     if e.key == pygame.K_DOWN and fits(board, piece, oy=1):   piece["y"] += 1
                     if e.key == pygame.K_SPACE:
+                        # hard drop: moves piece down until it can't, then locks it
                         while fits(board, piece, oy=1): piece["y"] += 1
                         lock(board, piece)
                         n = clear_lines(board); total_lines += n
@@ -133,6 +154,7 @@ def main():
                         piece, next_p, fall_timer = next_p, new_piece(), 0
                         if not fits(board, piece): break
             else:
+                # auto drop: moves piece down based on fall speed determined by level
                 if fall_timer >= max(50, 500 - (level - 1) * 45):
                     fall_timer = 0
                     if fits(board, piece, oy=1):
